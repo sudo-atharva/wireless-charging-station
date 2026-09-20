@@ -80,6 +80,7 @@ const float ACS_ZERO_OFFSET_V       = ADC_VREF / 2.0; // volts at 0A, adjust aft
 
 const unsigned long SAMPLE_INTERVAL_MS = 200;
 const unsigned long LCD_UPDATE_MS      = 500;
+const unsigned long LCD_PAGE_MS        = 2000;  // how long each LCD page is shown before cycling
 const unsigned long TEMP_INTERVAL_MS   = 1000; // DS18B20 conversion is slow, sample it less often
 
 // Battery pack voltage range - 0% / 100% points, tune to your pack chemistry & cell count.
@@ -98,6 +99,8 @@ DallasTemperature tempSensor(&oneWire);
 float chargerVoltage = 0, chargerCurrent = 0, battVoltage = 0, battCurrent = 0, battTempC = 0;
 unsigned long lastSample = 0;
 unsigned long lastLcdUpdate = 0;
+unsigned long lastLcdPageChange = 0;
+uint8_t lcdPage = 0; // 0 = charger/battery, 1 = battery %/temp
 unsigned long lastTempRequest = 0;
 bool tempConversionPending = false;
 
@@ -131,13 +134,20 @@ void updateLcd() {
   if (!lcdPresent) return;
   char line0[17];
   char line1[17];
-  snprintf(line0, sizeof(line0), "C %5.2fV %4.2fA", chargerVoltage, chargerCurrent);
-  snprintf(line1, sizeof(line1), "B %5.2fV %4.2fA", battVoltage, battCurrent);
+  if (lcdPage == 0) {
+    snprintf(line0, sizeof(line0), "C %5.2fV %4.2fA", chargerVoltage, chargerCurrent);
+    snprintf(line1, sizeof(line1), "B %5.2fV %4.2fA", battVoltage, battCurrent);
+  } else {
+    snprintf(line0, sizeof(line0), "Batt %5.1f %%", batteryPercent(battVoltage));
+    snprintf(line1, sizeof(line1), "Temp %5.1f C", battTempC);
+  }
 
   lcd.setCursor(0, 0);
   lcd.print(line0);
+  for (int i = strlen(line0); i < LCD_COLS; i++) lcd.print(' ');
   lcd.setCursor(0, 1);
   lcd.print(line1);
+  for (int i = strlen(line1); i < LCD_COLS; i++) lcd.print(' ');
 }
 
 // ---------- Web page (served from LittleFS: data/index.html) ----------
@@ -229,6 +239,11 @@ void loop() {
     }
     tempSensor.requestTemperatures();
     tempConversionPending = true;
+  }
+
+  if (now - lastLcdPageChange >= LCD_PAGE_MS) {
+    lastLcdPageChange = now;
+    lcdPage = 1 - lcdPage;
   }
 
   if (now - lastLcdUpdate >= LCD_UPDATE_MS) {
