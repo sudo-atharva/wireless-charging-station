@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wireless Charging Station</title>
+<style>
+  body { font-family: Arial, sans-serif; background:#111; color:#eee; margin:0; padding:16px; }
+  h1 { font-size: 1.3em; }
+  .grid { display:grid; grid-template-columns: 1fr 1fr; gap:12px; margin-top:12px; }
+  .card { background:#1e1e1e; border-radius:10px; padding:14px; }
+  .card h2 { margin:0 0 8px 0; font-size:0.95em; color:#9cf; }
+  .val { font-size:1.6em; font-weight:bold; }
+  .unit { font-size:0.5em; color:#aaa; }
+  .battery-card { grid-column: 1 / -1; }
+  .bar-track { background:#333; border-radius:6px; height:18px; margin-top:8px; overflow:hidden; }
+  .bar-fill { background:#4caf50; height:100%; width:0%; transition: width 0.3s; }
+  .charging-badge { display:inline-block; margin-left:8px; font-size:0.6em; padding:2px 8px; border-radius:10px; background:#333; color:#aaa; vertical-align:middle; }
+  .charging-badge.on { background:#2a5; color:#fff; }
+</style>
+</head>
+<body>
+  <h1>Wireless Charging Station</h1>
+  <div class="grid">
+    <div class="card battery-card">
+      <h2>Battery <span class="charging-badge" id="chargeBadge">--</span></h2>
+      <div class="val" id="battPct">--<span class="unit">%</span></div>
+      <div class="bar-track"><div class="bar-fill" id="battBar"></div></div>
+    </div>
+    <div class="card"><h2>Charger Voltage</h2><div class="val" id="chargerV">--<span class="unit">V</span></div></div>
+    <div class="card"><h2>Charger Current</h2><div class="val" id="chargerI">--<span class="unit">A</span></div></div>
+    <div class="card"><h2>Battery Voltage</h2><div class="val" id="battV">--<span class="unit">V</span></div></div>
+    <div class="card"><h2>Battery Current</h2><div class="val" id="battI">--<span class="unit">A</span></div></div>
+    <div class="card"><h2>Battery Temp</h2><div class="val" id="battTempC">--<span class="unit">&deg;C</span></div></div>
+  </div>
+
+<script>
+async function poll() {
+  try {
+    const r = await fetch('/data');
+    const d = await r.json();
+    document.getElementById('chargerV').innerHTML = d.chargerV.toFixed(2) + '<span class="unit">V</span>';
+    document.getElementById('chargerI').innerHTML = d.chargerI.toFixed(2) + '<span class="unit">A</span>';
+    document.getElementById('battV').innerHTML = d.battV.toFixed(2) + '<span class="unit">V</span>';
+    document.getElementById('battI').innerHTML = d.battI.toFixed(2) + '<span class="unit">A</span>';
+    document.getElementById('battTempC').innerHTML = d.battTempC.toFixed(1) + '<span class="unit">&deg;C</span>';
+    document.getElementById('battPct').innerHTML = d.battPct.toFixed(0) + '<span class="unit">%</span>';
+    document.getElementById('battBar').style.width = d.battPct + '%';
+    const badge = document.getElementById('chargeBadge');
+    badge.textContent = d.charging ? 'Charging' : 'Idle';
+    badge.classList.toggle('on', d.charging);
+  } catch (e) { /* ignore transient errors */ }
+}
+setInterval(poll, 500);
+poll();
+</script>
+</body>
+</html>
