@@ -138,8 +138,8 @@ void updateLcd() {
     snprintf(line0, sizeof(line0), "C %5.2fV %4.2fA", chargerVoltage, chargerCurrent);
     snprintf(line1, sizeof(line1), "B %5.2fV %4.2fA", battVoltage, battCurrent);
   } else {
-    snprintf(line0, sizeof(line0), "Batt %5.1f %%", batteryPercent(battVoltage));
-    snprintf(line1, sizeof(line1), "Temp %5.1f C", battTempC);
+    snprintf(line0, sizeof(line0), "Battery Temp");
+    snprintf(line1, sizeof(line1), "%5.1f C", battTempC);
   }
 
   lcd.setCursor(0, 0);
