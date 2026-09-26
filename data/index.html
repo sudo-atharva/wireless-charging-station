@@ -1,43 +1,186 @@
-<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Wireless Charging Station</title>
+<!DOCTYPE html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Conveyor Belt</title>
 <style>
-  body { font-family: Arial, sans-serif; background:#111; color:#eee; margin:0; padding:16px; }
-  h1 { font-size: 1.3em; }
-  .grid { display:grid; grid-template-columns: 1fr 1fr; gap:12px; margin-top:12px; }
-  .card { background:#1e1e1e; border-radius:10px; padding:14px; }
-  .card h2 { margin:0 0 8px 0; font-size:0.95em; color:#9cf; }
-  .val { font-size:1.6em; font-weight:bold; }
-  .unit { font-size:0.5em; color:#aaa; }
-</style>
-</head>
-<body>
-  <h1>Wireless Charging Station</h1>
-  <div class="grid">
-    <div class="card"><h2>Charger Voltage</h2><div class="val" id="chargerV">--<span class="unit">V</span></div></div>
-    <div class="card"><h2>Charger Current</h2><div class="val" id="chargerI">--<span class="unit">A</span></div></div>
-    <div class="card"><h2>Battery Voltage</h2><div class="val" id="battV">--<span class="unit">V</span></div></div>
-    <div class="card"><h2>Battery Current</h2><div class="val" id="battI">--<span class="unit">A</span></div></div>
-    <div class="card"><h2>Battery Temp</h2><div class="val" id="battTempC">--<span class="unit">&deg;C</span></div></div>
+body{font-family:sans-serif;background:#111;color:#eee;text-align:center;margin:0;padding:20px}
+h1{font-size:1.3em}
+.card{background:#222;border-radius:10px;padding:16px;margin:10px auto;max-width:320px;text-align:left}
+.card h3{margin:0 0 10px;text-align:center;font-size:1em;color:#aaa}
+.val{font-size:2em;font-weight:bold;text-align:center}
+.status{padding:6px 14px;border-radius:20px;display:inline-block;margin-top:10px}
+.base{background:#2a6}
+.raised{background:#c63}
+label{display:block;font-size:.85em;color:#aaa;margin-top:8px}
+input[type=number]{width:100%;box-sizing:border-box;padding:6px;border-radius:6px;border:1px solid #444;background:#111;color:#eee}
+input[type=range]{width:100%}
+button{width:100%;margin-top:12px;padding:10px;border:0;border-radius:6px;background:#2a6;color:#fff;font-weight:bold}
+canvas{background:#111;border-radius:6px;width:100%}
+.row{display:flex;gap:8px;align-items:center}
+.row>*{flex:1}
+.jog{touch-action:none;user-select:none;background:#357}
+.sec{background:#444}
+.on{background:#2a6}
+.hint{color:#fc6;font-size:.9em;text-align:center}
+</style></head><body>
+<h1>V-Belt Conveyor Monitor</h1>
+
+<div class="card">
+  <div style="text-align:center">Drive Current<div class="val" id="cur">--</div>A</div>
+  <canvas id="graph" width="280" height="80"></canvas>
+</div>
+
+<div class="card" style="text-align:center">
+  Angle<div class="val" id="ang">--</div>deg
+  <div class="status base" id="status">--</div>
+</div>
+
+<div class="card" id="setupCard">
+  <h3>Setup (hold to move)</h3>
+  <div class="hint" id="hint">--</div>
+  <div class="row"><b>Left</b><button class="jog" data-side="0" data-dir="1">&#9650; Up</button><button class="jog" data-side="0" data-dir="-1">&#9660; Down</button></div>
+  <div class="row"><b>Right</b><button class="jog" data-side="1" data-dir="1">&#9650; Up</button><button class="jog" data-side="1" data-dir="-1">&#9660; Down</button></div>
+  <div style="text-align:center;margin-top:8px">L <span id="posL">0</span>s &middot; R <span id="posR">0</span>s</div>
+  <div class="row"><button onclick="post('/setstart')">Set Start</button><button id="setEnd" onclick="setEnd()">Set End</button></div>
+</div>
+
+<div class="card" id="modeCard">
+  <h3>Mode</h3>
+  <div class="row"><button id="btnAuto" class="sec" onclick="setMode(0)">Auto</button><button id="btnMan" class="sec" onclick="setMode(1)">Manual</button></div>
+  <div id="manBox">
+    <input type="range" id="manSlider" min="0" max="45" step="0.5" value="0">
+    <div style="text-align:center" id="manVal">0.0 deg</div>
   </div>
+</div>
+
+<div class="card">
+  <h3>Settings (saved to flash)</h3>
+  <label>Start point angle, deg</label>
+  <input type="number" id="cfgStart" step="0.5">
+  <label>End point angle, deg</label>
+  <input type="number" id="cfgEnd" step="0.5">
+  <label>Base (default) angle, deg</label>
+  <input type="number" id="cfgBase" step="0.5">
+  <label>Raised angle, deg</label>
+  <input type="number" id="cfgRaised" step="0.5">
+  <label>Current limit, A</label>
+  <input type="number" id="cfgCur" step="0.1">
+  <button onclick="saveCfg()">Save</button>
+  <button class="sec" onclick="if(confirm('Re-run setup? Sides stop until Start/End are set again.'))post('/recal')">Re-run setup</button>
+</div>
 
 <script>
-async function poll() {
-  try {
+const graphData = [];
+const GRAPH_LEN = 60;
+function drawGraph(){
+  const c = document.getElementById('graph');
+  const ctx = c.getContext('2d');
+  ctx.clearRect(0,0,c.width,c.height);
+  if (graphData.length < 2) return;
+  const max = Math.max(1, ...graphData);
+  ctx.strokeStyle = '#2a6';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  graphData.forEach((v,i)=>{
+    const x = i / (GRAPH_LEN-1) * c.width;
+    const y = c.height - (v/max)*c.height;
+    i===0 ? ctx.moveTo(x,y) : ctx.lineTo(x,y);
+  });
+  ctx.stroke();
+}
+
+function post(url, body){
+  return fetch(url, {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body: body||''});
+}
+const $ = id => document.getElementById(id);
+
+let manual = true, lastSlide = 0;
+async function poll(){
+  try{
     const r = await fetch('/data');
     const d = await r.json();
-    document.getElementById('chargerV').innerHTML = d.chargerV.toFixed(2) + '<span class="unit">V</span>';
-    document.getElementById('chargerI').innerHTML = d.chargerI.toFixed(2) + '<span class="unit">A</span>';
-    document.getElementById('battV').innerHTML = d.battV.toFixed(2) + '<span class="unit">V</span>';
-    document.getElementById('battI').innerHTML = d.battI.toFixed(2) + '<span class="unit">A</span>';
-    document.getElementById('battTempC').innerHTML = d.battTempC.toFixed(1) + '<span class="unit">&deg;C</span>';
-  } catch (e) { /* ignore transient errors */ }
+    $('cur').textContent = d.current.toFixed(2);
+    $('ang').textContent = d.stage === 2 ? d.angle.toFixed(1) : '--';
+    const s = $('status');
+    s.textContent = d.stage < 2 ? 'SETUP' : d.manual ? 'MANUAL' : d.raised ? 'RAISED' : 'BASE';
+    s.className = 'status ' + (d.raised || d.stage < 2 ? 'raised' : 'base');
+
+    graphData.push(d.current);
+    if (graphData.length > GRAPH_LEN) graphData.shift();
+    drawGraph();
+
+    $('setupCard').style.display = d.stage < 2 ? '' : 'none';
+    $('modeCard').style.display = d.stage < 2 ? 'none' : '';
+    $('hint').textContent = d.stage === 0
+      ? 'Step 1: jog both sides to the LOW point, press Set Start'
+      : 'Step 2: jog both sides UP to the HIGH point, press Set End';
+    $('setEnd').disabled = d.stage !== 1;
+    $('posL').textContent = d.posL.toFixed(2);
+    $('posR').textContent = d.posR.toFixed(2);
+
+    manual = d.manual;
+    $('btnAuto').className = manual ? 'sec' : 'on';
+    $('btnMan').className = manual ? 'on' : 'sec';
+    $('manBox').style.display = manual ? '' : 'none';
+    if (Date.now() - lastSlide > 2000) {
+      $('manSlider').value = d.manualAngle;
+      $('manVal').textContent = d.manualAngle.toFixed(1) + ' deg';
+    }
+  }catch(e){}
 }
+
+function sendManual(){
+  const v = $('manSlider').value;
+  $('manVal').textContent = parseFloat(v).toFixed(1) + ' deg';
+  post('/manual', 'enabled=' + (manual?1:0) + '&angle=' + v);
+}
+function setMode(m){ manual = !!m; sendManual(); poll(); }
+$('manSlider').addEventListener('input', ()=>{ lastSlide = Date.now(); sendManual(); });
+
+async function setEnd(){
+  const r = await post('/setend');
+  if (!r.ok) alert(await r.text());
+}
+
+// Hold-to-jog: resend every 200ms, firmware stops the motor if resends stop.
+let jogTimer = null;
+document.querySelectorAll('.jog').forEach(b=>{
+  const send = d => post('/jog', 'side=' + b.dataset.side + '&dir=' + d);
+  b.addEventListener('pointerdown', e=>{
+    e.preventDefault();
+    b.setPointerCapture(e.pointerId);
+    send(b.dataset.dir);
+    clearInterval(jogTimer);
+    jogTimer = setInterval(()=>send(b.dataset.dir), 200);
+  });
+  ['pointerup','pointercancel'].forEach(ev=>b.addEventListener(ev, ()=>{
+    clearInterval(jogTimer); jogTimer = null; send(0);
+  }));
+});
+
+async function loadCfg(){
+  try{
+    const r = await fetch('/config');
+    const d = await r.json();
+    $('cfgStart').value = d.start;
+    $('cfgEnd').value = d.end;
+    $('manSlider').min = Math.min(d.start, d.end);
+    $('manSlider').max = Math.max(d.start, d.end);
+    document.getElementById('cfgBase').value = d.base;
+    document.getElementById('cfgRaised').value = d.raised;
+    document.getElementById('cfgCur').value = d.cur;
+  }catch(e){}
+}
+function saveCfg(){
+  const start = $('cfgStart').value;
+  const end = $('cfgEnd').value;
+  const base = document.getElementById('cfgBase').value;
+  const raised = document.getElementById('cfgRaised').value;
+  const cur = document.getElementById('cfgCur').value;
+  post('/config', 'start=' + start + '&end=' + end + '&base=' + base + '&raised=' + raised + '&cur=' + cur)
+    .then(loadCfg);
+}
+
+loadCfg();
 setInterval(poll, 500);
 poll();
-</script>
-</body>
-</html>
+</script></body></html>
